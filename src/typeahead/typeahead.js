@@ -63,6 +63,9 @@ angular.module('ui.bootstrap.typeahead', [])
         var locals = {$viewValue: inputValue};
         $q.when(parserResult.source(scope, locals)).then(function(matches) {
 
+          // promise resolved, loading complete.
+          scope.itemsLoading = false;
+
           //it might happen that several async queries were in progress if a user were typing fast
           //but we are interested only in responses that correspond to the current view value
           if (inputValue === modelCtrl.$viewValue) {
@@ -93,11 +96,16 @@ angular.module('ui.bootstrap.typeahead', [])
 
       //we need to propagate user's query so we can higlight matches
       scope.query = undefined;
+      // current value in the input
+      scope.inputValue;
+      // setup scope to track loading state of items
+      scope.itemsLoading = true;
 
       //plug into $parsers pipeline to open a typeahead on view changes initiated from DOM
       //$parsers kick-in on all the changes coming from the vview as well as manually triggered by $setViewValue
       modelCtrl.$parsers.push(function (inputValue) {
 
+        scope.inputValue = inputValue;
         resetMatches();
         if (selected) {
           return inputValue;
@@ -156,7 +164,7 @@ angular.module('ui.bootstrap.typeahead', [])
       });
 
       var tplElCompiled = $compile("<typeahead-popup matches='matches' active='activeIdx' select='select(activeIdx)' "+
-        "query='query'></typeahead-popup>")(scope);
+        "query='query' items-loading='itemsLoading' input-value='inputValue'></typeahead-popup>")(scope);
       element.after(tplElCompiled);
     }
   };
@@ -170,6 +178,8 @@ angular.module('ui.bootstrap.typeahead', [])
         matches:'=',
         query:'=',
         active:'=',
+        itemsLoading: '=',
+        inputValue: '=',
         select:'&'
       },
       replace:true,
@@ -177,7 +187,8 @@ angular.module('ui.bootstrap.typeahead', [])
       link:function (scope, element, attrs) {
 
         scope.isOpen = function () {
-          return scope.matches.length > 0;
+
+          return (scope.itemsLoading && scope.inputValue) || (scope.matches.length > 0);
         };
 
         scope.isActive = function (matchIdx) {
@@ -194,6 +205,41 @@ angular.module('ui.bootstrap.typeahead', [])
       }
     };
   })
+
+  .directive('typeaheadIf', [function () {
+    return {
+      transclude: 'element',
+      priority: 1000,
+      terminal: true,
+      restrict: 'A',
+      compile: function (element, attr, transclude) {
+        return function (scope, element, attr) {
+
+          var childElement;
+          var childScope;
+
+          scope.$watch(attr['typeaheadIf'], function (newValue) {
+            if (childElement) {
+              childElement.remove();
+              childElement = undefined;
+            }
+            if (childScope) {
+              childScope.$destroy();
+              childScope = undefined;
+            }
+
+            if (newValue) {
+              childScope = scope.$new();
+              transclude(childScope, function (clone) {
+                childElement = clone;
+                element.after(clone);
+              });
+            }
+          });
+        };
+      }
+    };
+  }])
 
   .filter('typeaheadHighlight', function() {
     return function(matchItem, query) {
